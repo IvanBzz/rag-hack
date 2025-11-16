@@ -72,7 +72,7 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         '--output',
-        default='submission.csv',
+        default='submission1.csv',
         help='Путь для сохранения submission файла'
     )
     parser.add_argument(

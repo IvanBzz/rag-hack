@@ -10,12 +10,12 @@ model = SentenceTransformer(MODEL)
 
 def embed_chunks(input_path, output_path):
     df = pd.read_csv(input_path)
-    if 'chunk' not in df.columns:
+    if 'text' not in df.columns:
         raise ValueError('Входной файл не содержит столбца "chunk".')
-    df = df.dropna(subset=['chunk'])
+    df = df.dropna(subset=['text'])
     if df.empty:
         raise ValueError("В файле с чанками нет доступных текстов для эмбеддинга.")
-    chunks = df['chunk'].astype(str).str.strip()
+    chunks = df['text'].astype(str).str.strip()
     chunks = chunks[chunks != ""]
     if chunks.empty:
         raise ValueError("Все чанки пусты после очистки.")
@@ -24,4 +24,4 @@ def embed_chunks(input_path, output_path):
 
 
 if __name__ == '__main__':
-    embed_chunks('data/chunks.csv', 'data/chunk_embeddings.npy')
+    embed_chunks('data/low_filtered.csv', 'data/chunk_embeddings.npy')
