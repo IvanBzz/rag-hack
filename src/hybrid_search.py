@@ -35,7 +35,7 @@ class HybridRetriever:
         """
         logger.info("Загрузка данных...")
         self.chunks_df = pd.read_csv(chunks_path)
-        self.chunks_df = self.chunks_df.dropna(subset=['chunk'])
+        self.chunks_df = self.chunks_df.dropna(subset=['text'])
         
         # Загружаем dense index (FAISS)
         logger.info("Загрузка FAISS индекса...")
@@ -51,7 +51,7 @@ class HybridRetriever:
             strip_accents='unicode',
             lowercase=True
         )
-        chunks_text = self.chunks_df['chunk'].astype(str).tolist()
+        chunks_text = self.chunks_df['text'].astype(str).tolist()
         self.tfidf_matrix = self.tfidf.fit_transform(chunks_text)
         
         logger.info(f"Индексы готовы. Всего чанков: {len(self.chunks_df)}")
@@ -210,7 +210,7 @@ if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(description='Гибридный поиск (dense + sparse)')
     parser.add_argument('--questions', default='data/questions_clean.csv')
-    parser.add_argument('--chunks', default='data/chunks.csv')
+    parser.add_argument('--chunks', default='data/low_filtered.csv')
     parser.add_argument('--embeddings', default='data/chunk_embeddings.npy')
     parser.add_argument('--index', default='data/index.faiss')
     parser.add_argument('--output', default='data/retrieved.csv')
