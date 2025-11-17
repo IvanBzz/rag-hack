@@ -12,22 +12,16 @@ logger = logging.getLogger(__name__)
 
 # Available reranking models (ordered by quality/speed tradeoff)
 RERANK_MODELS = {
-    # Best for Russian - specialized cross-encoders
-    'ru_large': 'cross-encoder/mmarco-mMiniLMv2-L12-H384-v1',  # Multilingual, good for RU
-    'ru_medium': 'cross-encoder/ms-marco-MiniLM-L-6-v2',  # Fast, decent quality
-    
-    # Experimental Russian models
-    'ru_experimental': 'sentence-transformers/paraphrase-multilingual-mpnet-base-v2',
-    
-    # Fallback options
-    'fast': 'cross-encoder/ms-marco-TinyBERT-L-2-v2',  # Fastest, lower quality
-    'balanced': 'cross-encoder/ms-marco-MiniLM-L-12-v2',  # Good balance
+    # Best for Russian - Russian NLU SBERT model
+    'ru_large': 'AI-Forever/sbert_large_nlu_ru',  # Russian-optimized SBERT, best for RU+E5 synergy
 }
 
 
 class Reranker:
     """
-    Cross-encoder based reranker with batch processing and optimization.
+    Hybrid reranker supporting both CrossEncoder and SBERT models.
+    - SBERT (ru_large): Russian-specific bi-encoder for better multilingual support
+    - CrossEncoder (fallback): General cross-encoder for query-document pair scoring
     """
     
     def __init__(self, model_name: str = 'ru_large', batch_size: int = 32, 
@@ -43,42 +37,84 @@ class Reranker:
         self.model_name = RERANK_MODELS.get(model_name, model_name)
         self.batch_size = batch_size
         
-        logger.info(f"Loading cross-encoder model: {self.model_name}")
-        
         # Determine device
         if device is None:
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
         
-        self.model = CrossEncoder(self.model_name, device=device, max_length=512)
+        self.device = device
+        self.is_sbert = 'sbert' in self.model_name.lower() or 'forever' in self.model_name.lower()
+        
+        if self.is_sbert:
+            logger.info(f"Loading SBERT model: {self.model_name}")
+            from sentence_transformers import SentenceTransformer
+            self.model = SentenceTransformer(self.model_name, device=device)
+        else:
+            logger.info(f"Loading cross-encoder model: {self.model_name}")
+            self.model = CrossEncoder(self.model_name, device=device, max_length=512)
+        
         logger.info(f"Model loaded on device: {device}")
         
     def score_pairs(self, pairs: List[Tuple[str, str]]) -> np.ndarray:
         """
-        Score query-document pairs using cross-encoder.
+        Score query-document pairs using either SBERT or CrossEncoder.
+        
+        For SBERT: Encodes queries and documents separately, computes cosine similarity
+        For CrossEncoder: Uses cross-encoder pair scoring
         
         Args:
             pairs: List of (query, document) tuples
             
         Returns:
-            Array of relevance scores
+            Array of relevance scores (normalized to [0, 1])
         """
-        scores = self.model.predict(
-            pairs,
-            batch_size=self.batch_size,
-            show_progress_bar=False,
-            convert_to_numpy=True
-        )
+        if self.is_sbert:
+            queries = [pair[0] for pair in pairs]
+            documents = [pair[1] for pair in pairs]
+            
+            q_embeddings = self.model.encode(
+                queries,
+                batch_size=self.batch_size,
+                show_progress_bar=False,
+                convert_to_numpy=True,
+                normalize_embeddings=True
+            )
+            
+            doc_embeddings = self.model.encode(
+                documents,
+                batch_size=self.batch_size,
+                show_progress_bar=False,
+                convert_to_numpy=True,
+                normalize_embeddings=True
+            )
+            
+            scores = np.array([
+                float(np.dot(q_emb, doc_emb))
+                for q_emb, doc_emb in zip(q_embeddings, doc_embeddings)
+            ])
+            
+            scores = (scores + 1) / 2
+            
+        else:
+            scores = self.model.predict(
+                pairs,
+                batch_size=self.batch_size,
+                show_progress_bar=False,
+                convert_to_numpy=True
+            )
+        
         return scores
     
     def rerank_candidates(self, query: str, candidates: List[str], 
-                         top_k: int = 5) -> List[Tuple[int, float]]:
+                         top_k: int = 5, e5_scores: Optional[List[float]] = None) -> List[Tuple[int, float]]:
         """
         Rerank candidate documents for a single query.
+        Optionally fuses with E5 embedding scores for better synergy.
         
         Args:
             query: Query text
             candidates: List of candidate document texts
             top_k: Number of top results to return
+            e5_scores: Optional E5 embedding scores to fuse with reranker scores
             
         Returns:
             List of (index, score) tuples sorted by score descending
@@ -86,15 +122,31 @@ class Reranker:
         if not candidates:
             return []
         
-        # Create query-document pairs
         pairs = [(query, doc) for doc in candidates]
+        reranker_scores = self.score_pairs(pairs)
         
-        # Score all pairs
-        scores = self.score_pairs(pairs)
+        final_scores = reranker_scores
         
-        # Sort by score and return top_k
-        ranked_indices = np.argsort(scores)[::-1][:top_k]
-        results = [(int(idx), float(scores[idx])) for idx in ranked_indices]
+        if e5_scores is not None and len(e5_scores) == len(candidates):
+            reranker_arr = np.array(reranker_scores, dtype=float)
+            e5_arr = np.array(e5_scores, dtype=float)
+            
+            reranker_min, reranker_max = reranker_arr.min(), reranker_arr.max()
+            if reranker_max - reranker_min > 1e-8:
+                reranker_norm = (reranker_arr - reranker_min) / (reranker_max - reranker_min + 1e-10)
+            else:
+                reranker_norm = np.ones_like(reranker_arr) * 0.5
+            
+            e5_min, e5_max = e5_arr.min(), e5_arr.max()
+            if e5_max - e5_min > 1e-8:
+                e5_norm = (e5_arr - e5_min) / (e5_max - e5_min + 1e-10)
+            else:
+                e5_norm = np.ones_like(e5_arr) * 0.5
+            
+            final_scores = 0.6 * reranker_norm + 0.4 * e5_norm
+        
+        ranked_indices = np.argsort(final_scores)[::-1][:top_k]
+        results = [(int(idx), float(final_scores[idx])) for idx in ranked_indices]
         
         return results
 
@@ -104,14 +156,15 @@ def rerank(retrieved_path: str, questions_path: str, chunks_path: str,
            top_k: int = 5, batch_size: int = 32,
            save_intermediate: bool = True):
     """
-    Rerank retrieved documents using cross-encoder.
+    Rerank retrieved documents using SBERT Russian or CrossEncoder.
+    SBERT Russian model optimized for Russian language and synergizes with E5 embeddings.
     
     Args:
         retrieved_path: Path to retrieved candidates CSV
         questions_path: Path to questions CSV
         chunks_path: Path to chunks CSV
         output_path: Path to save reranked results
-        model_name: Model to use for reranking
+        model_name: Model to use for reranking (default: ru_large = AI-Forever/sbert_large_nlu_ru)
         top_k: Number of top results to keep per query
         batch_size: Batch size for inference
         save_intermediate: Save full scores before filtering to top_k
