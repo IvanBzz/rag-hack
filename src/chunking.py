@@ -238,8 +238,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Улучшенный чанкинг с перекрытием')
     parser.add_argument('--input', default='data/clean_answer_data.csv')
     parser.add_argument('--output', default='data/chunks.csv')
-    parser.add_argument('--max-length', type=int, default=512)
-    parser.add_argument('--overlap', type=int, default=128)
+    parser.add_argument('--max-length', type=int, default=768)
+    parser.add_argument('--overlap', type=int, default=192)
     parser.add_argument('--min-chunk-length', type=int, default=50)
     parser.add_argument('--analyze', action='store_true',
                        help='Анализ стратегий чанкинга')

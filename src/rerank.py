@@ -185,7 +185,7 @@ def rerank(retrieved_path: str, questions_path: str, chunks_path: str,
     
     # Create web_id to chunk mapping for fast lookup
     logger.info("Creating chunk lookup index...")
-    chunk_map = df_chunks.set_index('web_id')['chunk'].to_dict()
+    chunk_map = df_chunks.set_index('web_id')['text'].to_dict()
     
     # Initialize reranker
     reranker = Reranker(model_name=model_name, batch_size=batch_size)
@@ -333,7 +333,7 @@ if __name__ == '__main__':
                        help='Path to questions')
     parser.add_argument('--chunks', default='data/chunks.csv',
                        help='Path to chunks')
-    parser.add_argument('--output', default='submission.csv',
+    parser.add_argument('--output', default='submission1234.csv',
                        help='Path to save submission')
     parser.add_argument('--model', default='ru_large',
                        choices=list(RERANK_MODELS.keys()) + ['compare'],

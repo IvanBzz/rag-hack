@@ -56,7 +56,7 @@ class HybridRetriever:
         
         logger.info(f"Индексы готовы. Всего чанков: {len(self.chunks_df)}")
     
-    def search_dense(self, queries: List[str], k: int = 100) -> List[List[Tuple[int, float]]]:
+    def search_dense(self, queries: List[str], k: int = 25) -> List[List[Tuple[int, float]]]:
         """Dense поиск через FAISS."""
         query_embeddings = self.model.encode(queries, show_progress_bar=False)
         distances, indices = self.faiss_index.search(query_embeddings, k)
@@ -67,7 +67,7 @@ class HybridRetriever:
         
         return results
     
-    def search_sparse(self, queries: List[str], k: int = 100) -> List[List[Tuple[int, float]]]:
+    def search_sparse(self, queries: List[str], k: int = 25) -> List[List[Tuple[int, float]]]:
         """Sparse поиск через TF-IDF."""
         query_vectors = self.tfidf.transform(queries)
         
@@ -86,8 +86,8 @@ class HybridRetriever:
         
         return results
     
-    def hybrid_search(self, queries: List[str], k: int = 200, 
-                     dense_weight: float = 0.7, sparse_weight: float = 0.3) -> pd.DataFrame:
+    def hybrid_search(self, queries: List[str], k: int = 50, 
+                     dense_weight: float = 0.8, sparse_weight: float = 0.2) -> pd.DataFrame:
         """
         Гибридный поиск: комбинирует dense и sparse результаты.
         
@@ -166,8 +166,8 @@ class HybridRetriever:
 
 
 def retrieve_hybrid(questions_path: str, chunks_path: str, embeddings_path: str, 
-                   index_path: str, output_path: str, k: int = 200,
-                   dense_weight: float = 0.7, sparse_weight: float = 0.3):
+                   index_path: str, output_path: str, k: int = 50,
+                   dense_weight: float = 0.8, sparse_weight: float = 0.2):
     """
     Выполняет гибридный поиск и сохраняет результаты.
     
@@ -210,13 +210,13 @@ if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(description='Гибридный поиск (dense + sparse)')
     parser.add_argument('--questions', default='data/questions_clean.csv')
-    parser.add_argument('--chunks', default='data/clean_answer_data.csv')
+    parser.add_argument('--chunks', default='data/chunks.csv')
     parser.add_argument('--embeddings', default='data/chunk_embeddings.npy')
     parser.add_argument('--index', default='data/index.faiss')
     parser.add_argument('--output', default='data/retrieved.csv')
-    parser.add_argument('--k', type=int, default=200, help='Результатов на запрос')
-    parser.add_argument('--dense-weight', type=float, default=0.7, help='Вес dense поиска')
-    parser.add_argument('--sparse-weight', type=float, default=0.3, help='Вес sparse поиска')
+    parser.add_argument('--k', type=int, default=50, help='Результатов на запрос')
+    parser.add_argument('--dense-weight', type=float, default=0.8, help='Вес dense поиска')
+    parser.add_argument('--sparse-weight', type=float, default=0.2, help='Вес sparse поиска')
     
     args = parser.parse_args()
     
