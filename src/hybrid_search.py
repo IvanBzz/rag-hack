@@ -210,7 +210,7 @@ if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(description='Гибридный поиск (dense + sparse)')
     parser.add_argument('--questions', default='data/questions_clean.csv')
-    parser.add_argument('--chunks', default='data/low_filtered.csv')
+    parser.add_argument('--chunks', default='data/clean_answer_data.csv')
     parser.add_argument('--embeddings', default='data/chunk_embeddings.npy')
     parser.add_argument('--index', default='data/index.faiss')
     parser.add_argument('--output', default='data/retrieved.csv')
