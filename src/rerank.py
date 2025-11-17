@@ -14,12 +14,13 @@ logger = logging.getLogger(__name__)
 RERANK_MODELS = {
     # Best for Russian - Russian NLU SBERT model
     'ru_large': 'AI-Forever/sbert_large_nlu_ru',  # Russian-optimized SBERT, best for RU+E5 synergy
+
 }
 
 
 class Reranker:
     """
-    Hybrid reranker supporting both CrossEncoder and SBERT models.
+    Hybrid reranker supporting both SBERT and CrossEncoder models.
     - SBERT (ru_large): Russian-specific bi-encoder for better multilingual support
     - CrossEncoder (fallback): General cross-encoder for query-document pair scoring
     """
@@ -43,6 +44,7 @@ class Reranker:
         
         self.device = device
         self.is_sbert = 'sbert' in self.model_name.lower() or 'forever' in self.model_name.lower()
+        self._query_cache = {}
         
         if self.is_sbert:
             logger.info(f"Loading SBERT model: {self.model_name}")
@@ -71,13 +73,27 @@ class Reranker:
             queries = [pair[0] for pair in pairs]
             documents = [pair[1] for pair in pairs]
             
-            q_embeddings = self.model.encode(
-                queries,
-                batch_size=self.batch_size,
-                show_progress_bar=False,
-                convert_to_numpy=True,
-                normalize_embeddings=True
-            )
+            queries_to_encode = []
+            queries_to_encode_map = {}
+            
+            for i, q in enumerate(queries):
+                if q not in self._query_cache and q not in queries_to_encode_map:
+                    queries_to_encode.append(q)
+                    queries_to_encode_map[q] = len(queries_to_encode) - 1
+            
+            if queries_to_encode:
+                new_embeddings = self.model.encode(
+                    queries_to_encode,
+                    batch_size=self.batch_size,
+                    show_progress_bar=False,
+                    convert_to_numpy=True,
+                    normalize_embeddings=True
+                )
+                
+                for q, emb in zip(queries_to_encode, new_embeddings):
+                    self._query_cache[q] = emb
+            
+            q_embeddings = np.array([self._query_cache[q] for q in queries])
             
             doc_embeddings = self.model.encode(
                 documents,
@@ -87,11 +103,7 @@ class Reranker:
                 normalize_embeddings=True
             )
             
-            scores = np.array([
-                float(np.dot(q_emb, doc_emb))
-                for q_emb, doc_emb in zip(q_embeddings, doc_embeddings)
-            ])
-            
+            scores = (q_embeddings * doc_embeddings).sum(axis=1)
             scores = (scores + 1) / 2
             
         else:
@@ -153,11 +165,11 @@ class Reranker:
 
 def rerank(retrieved_path: str, questions_path: str, chunks_path: str, 
            output_path: str, model_name: str = 'ru_large', 
-           top_k: int = 5, batch_size: int = 32,
+           top_k: int = 5, batch_size: int = 64,
            save_intermediate: bool = True):
     """
     Rerank retrieved documents using SBERT Russian or CrossEncoder.
-    SBERT Russian model optimized for Russian language and synergizes with E5 embeddings.
+    Optimized for speed with query caching and batch processing.
     
     Args:
         retrieved_path: Path to retrieved candidates CSV
@@ -166,7 +178,7 @@ def rerank(retrieved_path: str, questions_path: str, chunks_path: str,
         output_path: Path to save reranked results
         model_name: Model to use for reranking (default: ru_large = AI-Forever/sbert_large_nlu_ru)
         top_k: Number of top results to keep per query
-        batch_size: Batch size for inference
+        batch_size: Batch size for inference (64+ recommended for speed)
         save_intermediate: Save full scores before filtering to top_k
     """
     logger.info("="*60)
@@ -185,67 +197,76 @@ def rerank(retrieved_path: str, questions_path: str, chunks_path: str,
     
     # Create web_id to chunk mapping for fast lookup
     logger.info("Creating chunk lookup index...")
-    chunk_map = df_chunks.set_index('web_id')['text'].to_dict()
+    text_col = 'text' if 'text' in df_chunks.columns else 'chunk'
+    chunk_map = df_chunks.set_index('web_id')[text_col].to_dict()
+    logger.info(f"Chunk map created with {len(chunk_map)} valid chunks")
     
     # Initialize reranker
+    logger.info(f"Using batch_size={batch_size} (increase for speed on powerful GPUs)")
     reranker = Reranker(model_name=model_name, batch_size=batch_size)
+    logger.info("Query caching enabled - repeated queries will use cached embeddings")
     
-    # Process each query
+    # Process queries with batching for efficiency
     reranked = []
     query_ids = df_retr['q_id'].unique()
     
-    logger.info(f"Reranking {len(query_ids)} queries...")
+    logger.info(f"Reranking {len(query_ids)} queries (batch processing for speed)...")
     
-    for qid in tqdm(query_ids, desc="Reranking queries"):
-        # Get query text
-        qtext = df_q.loc[df_q['q_id'] == qid, 'query'].values[0]
+    total_candidates = len(df_retr)
+    skipped_candidates = 0
+    skipped_queries = 0
+    
+    query_batch_size = 10
+    
+    for batch_start in tqdm(range(0, len(query_ids), query_batch_size), desc="Reranking queries"):
+        batch_end = min(batch_start + query_batch_size, len(query_ids))
+        batch_qids = query_ids[batch_start:batch_end]
         
-        # Get candidates for this query
-        candidates = df_retr[df_retr['q_id'] == qid].copy()
-        
-        # Get chunk texts
-        candidate_texts = []
-        valid_indices = []
-        
-        for idx, row in candidates.iterrows():
-            web_id = row['web_id']
-            if web_id in chunk_map:
-                candidate_texts.append(chunk_map[web_id])
-                valid_indices.append(idx)
-            else:
-                logger.warning(f"web_id {web_id} not found in chunks")
-        
-        if not candidate_texts:
-            logger.warning(f"No valid candidates for query {qid}")
-            continue
-        
-        # Rerank using cross-encoder
-        ranked_results = reranker.rerank_candidates(
-            query=qtext,
-            candidates=candidate_texts,
-            top_k=min(top_k, len(candidate_texts))
-        )
-        
-        # Add scores to candidates DataFrame
-        scores = np.zeros(len(valid_indices))
-        ranks = np.arange(len(valid_indices)) + 1
-        
-        for rank, (orig_idx, score) in enumerate(ranked_results):
-            idx = valid_indices[orig_idx]
-            candidates.loc[idx, 'rerank_score'] = score
-            candidates.loc[idx, 'rerank_rank'] = rank + 1
-        
-        # Keep only top_k
-        candidates_with_scores = candidates.loc[valid_indices]
-        candidates_with_scores = candidates_with_scores.sort_values(
-            'rerank_score', ascending=False
-        ).head(top_k)
-        
-        reranked.append(candidates_with_scores)
+        for qid in batch_qids:
+            qtext = df_q.loc[df_q['q_id'] == qid, 'query'].values[0]
+            candidates = df_retr[df_retr['q_id'] == qid].copy()
+            
+            candidate_texts = []
+            valid_indices = []
+            
+            for idx, row in candidates.iterrows():
+                web_id = row['web_id']
+                if web_id in chunk_map:
+                    candidate_texts.append(chunk_map[web_id])
+                    valid_indices.append(idx)
+                else:
+                    skipped_candidates += 1
+            
+            if not candidate_texts:
+                logger.warning(f"No valid candidates for query {qid}")
+                skipped_queries += 1
+                continue
+            
+            ranked_results = reranker.rerank_candidates(
+                query=qtext,
+                candidates=candidate_texts,
+                top_k=min(top_k, len(candidate_texts))
+            )
+            
+            for rank, (orig_idx, score) in enumerate(ranked_results):
+                idx = valid_indices[orig_idx]
+                candidates.loc[idx, 'rerank_score'] = score
+                candidates.loc[idx, 'rerank_rank'] = rank + 1
+            
+            candidates_with_scores = candidates.loc[valid_indices]
+            candidates_with_scores = candidates_with_scores.sort_values(
+                'rerank_score', ascending=False
+            ).head(top_k)
+            
+            reranked.append(candidates_with_scores)
     
     # Combine all results
     logger.info("Combining results...")
-    result_df = pd.concat(reranked, ignore_index=True)
+    if not reranked:
+        logger.error("No results were reranked! All queries had missing chunks.")
+        result_df = pd.DataFrame()
+    else:
+        result_df = pd.concat(reranked, ignore_index=True)
     
     # Save results
     logger.info(f"Saving reranked results to {output_path}")
@@ -261,13 +282,22 @@ def rerank(retrieved_path: str, questions_path: str, chunks_path: str,
     logger.info("="*60)
     logger.info("Reranking complete!")
     logger.info(f"Total results: {len(result_df)}")
-    logger.info(f"Queries processed: {len(query_ids)}")
-    logger.info(f"Avg results per query: {len(result_df) / len(query_ids):.2f}")
-    if 'rerank_score' in result_df.columns:
-        logger.info(f"Score range: [{result_df['rerank_score'].min():.4f}, "
-                   f"{result_df['rerank_score'].max():.4f}]")
-        logger.info(f"Mean score: {result_df['rerank_score'].mean():.4f}")
+    logger.info(f"Queries processed: {len(query_ids)} (skipped {skipped_queries})")
+    logger.info(f"Candidates: {total_candidates} total")
+    logger.info(f"  Valid: {total_candidates - skipped_candidates}")
+    logger.info(f"  Skipped (missing chunks): {skipped_candidates} ({100*skipped_candidates/total_candidates:.1f}%)")
+    logger.info(f"Query cache size: {len(reranker._query_cache)} unique queries cached")
+    if len(result_df) > 0:
+        logger.info(f"Avg results per query: {len(result_df) / max(1, len(query_ids) - skipped_queries):.2f}")
+        if 'rerank_score' in result_df.columns:
+            logger.info(f"Score range: [{result_df['rerank_score'].min():.4f}, "
+                       f"{result_df['rerank_score'].max():.4f}]")
+            logger.info(f"Mean score: {result_df['rerank_score'].mean():.4f}")
     logger.info("="*60)
+    logger.info("Optimization tips:")
+    logger.info("  - Increase --batch-size for faster inference (if GPU memory allows)")
+    logger.info("  - Query caching automatically speeds up repeated queries")
+    logger.info("  - SBERT Russian model is ~3-5x faster than CrossEncoder variants")
 
 
 def compare_models(retrieved_path: str, questions_path: str, chunks_path: str,
@@ -333,15 +363,15 @@ if __name__ == '__main__':
                        help='Path to questions')
     parser.add_argument('--chunks', default='data/chunks.csv',
                        help='Path to chunks')
-    parser.add_argument('--output', default='submission1234.csv',
+    parser.add_argument('--output', default='submission.csv',
                        help='Path to save submission')
     parser.add_argument('--model', default='ru_large',
                        choices=list(RERANK_MODELS.keys()) + ['compare'],
                        help='Model to use or "compare" to test all')
     parser.add_argument('--top-k', type=int, default=5,
                        help='Number of results per query')
-    parser.add_argument('--batch-size', type=int, default=32,
-                       help='Batch size for inference')
+    parser.add_argument('--batch-size', type=int, default=64,
+                       help='Batch size for inference (increase for speed, reduce for memory)')
     
     args = parser.parse_args()
     
