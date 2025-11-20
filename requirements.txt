@@ -7,3 +7,6 @@ pandas==2.2.3
 numpy==2.2.6
 scikit-learn==1.5.2
 tqdm
+lxml==6.0.2
+beautifulsoup4==4.14.2
+soupsieve==2.8
