@@ -1,4 +1,4 @@
-# RAG Hack — Retrieval-Augmented Search (Alpha Bank Hackathon)
+# Альфа-Будущее Хакатон / Настройка RAG для вопросов и ответов
 
 ## Метрика Hit@5: улучшена с ~0.79% → 23.54%
 ## Команда из 4 человек
