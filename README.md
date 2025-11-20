@@ -3,10 +3,11 @@
 ## Метрика Hit@5: улучшена с ~0.79% → 23.54%
 ## Команда из 4 человек
 Роли были распредлены так:
-ML Engineer / Team Lead (моя роль)
-ML Engineer
-Data Analyst 
-Data Analyst 
+
+- ML Engineer / Team Lead (моя роль)
+- ML Engineer
+- Data Analyst 
+- Data Analyst 
 
 
 📘 Описание проекта
