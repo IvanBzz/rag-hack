@@ -24,4 +24,5 @@ def embed_chunks(input_path, output_path):
 
 
 if __name__ == '__main__':
-    embed_chunks('data/chunks.csv', 'data/chunk_embeddings.npy')
+    embed_chunks('data/processed/filtered_file.csv', 'data/processed/chunk_embeddings.npy')
+#    embed_chunks('data/processed/chunks.csv', 'data/processed/chunk_embeddings.npy')

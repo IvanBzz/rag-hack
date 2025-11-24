@@ -17,10 +17,11 @@ run-hybrid:
 	python3 src/index_faiss.py && \
 	python3 src/hybrid_search.py --dense-weight 0.8 --sparse-weight 0.2 && \
 	python3 src/eval.py && \
-	python3 src/rerank.py && \
+	python3 experiments/rerank.py && \
 	python3 src/convert_to_submission.py
 
-run-hybrid2:
+run-final2:
+	python3 src/clean.py
 	python3 src/embed.py && \
 	python3 src/index_faiss.py && \
 	python3 src/hybrid_search.py --dense-weight 0.7 --sparse-weight 0.3 && \
@@ -29,4 +30,4 @@ run-hybrid2:
 
 # Очистка промежуточных файлов
 clean:
-	rm -f data/chunks.csv data/chunk_embeddings.npy data/index.faiss data/retrieved.csv
+	rm -f data/processed/chunks.csv data/processed/chunk_embeddings.npy data/processed/index.faiss data/processed/retrieved.csv

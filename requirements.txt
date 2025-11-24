@@ -4,7 +4,7 @@ torch==2.3.0
 faiss-cpu==1.8.0
 nltk==3.9b1
 pandas==2.2.3
-numpy==2.2.6
+numpy==1.26.4
 scikit-learn==1.5.2
 tqdm
 lxml==6.0.2

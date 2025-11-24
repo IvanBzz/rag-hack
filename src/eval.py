@@ -67,12 +67,12 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         '--input',
-        default='data/retrieved.csv',
+        default='data/processed/retrieved.csv',
         help='Путь к входному файлу с колонками q_id, web_id, rank'
     )
     parser.add_argument(
         '--output',
-        default='submission321.csv',
+        default='submission_retrived.csv',
         help='Путь для сохранения submission файла'
     )
     parser.add_argument(
