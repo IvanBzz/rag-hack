@@ -10,3 +10,4 @@ punkt/
 *.zip
 *.npy
 *.faiss
+retrieved.csv
