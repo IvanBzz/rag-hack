@@ -10,4 +10,4 @@ def build_faiss_index(embeddings_path, index_path):
 
 
 if __name__ == '__main__':
-    build_faiss_index('data/processed/chunk_embeddings.npy', 'data/processed/index.faiss')
+    build_faiss_index('data/processed/cembeddings.npy', 'data/processed/index.faiss')
