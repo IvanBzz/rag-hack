@@ -6,8 +6,8 @@
 
 - ML Engineer / Team Lead (моя роль)
 - ML Engineer
-- Data Analyst 
-- Data Analyst 
+- Data Analyst
+- Data Analyst
 
 
 📘 Описание проекта
