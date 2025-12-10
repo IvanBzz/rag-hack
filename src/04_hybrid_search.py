@@ -209,11 +209,11 @@ if __name__ == '__main__':
     import argparse
     
     parser = argparse.ArgumentParser(description='Гибридный поиск (dense + sparse)')
-    parser.add_argument('--questions', default='data/questions_clean.csv')
-    parser.add_argument('--chunks', default='data/filtered_file.csv')
-    parser.add_argument('--embeddings', default='data/embeddings.npy')
-    parser.add_argument('--index', default='data/index.faiss')
-    parser.add_argument('--output', default='data/retrieved.csv')
+    parser.add_argument('--questions', default='data/raw/questions_clean.csv')
+    parser.add_argument('--chunks', default='data/processed/filtered_file.csv')
+    parser.add_argument('--embeddings', default='data/processed/embeddings.npy')
+    parser.add_argument('--index', default='data/processed/index.faiss')
+    parser.add_argument('--output', default='data/processed/retrieved.csv')
     parser.add_argument('--k', type=int, default=200, help='Результатов на запрос')
     parser.add_argument('--dense-weight', type=float, default=0.7, help='Вес dense поиска')
     parser.add_argument('--sparse-weight', type=float, default=0.3, help='Вес sparse поиска')
