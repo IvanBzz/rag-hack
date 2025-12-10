@@ -115,6 +115,6 @@ if __name__ == "__main__":
 
     filter_columns(
         input_csv="data/processed/clean.csv",
-        output_csv="data/processed/filtered_file_try.csv",
+        output_csv="data/processed/filtered_file.csv",
         columns=["web_id", "text"]
     )
